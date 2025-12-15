@@ -180,22 +180,33 @@ class LocalStorageDB {
 class DatabaseService {
   private localDb = new LocalStorageDB();
   private apiBase = 'http://localhost:3000/api';
-  private useApi = true; // Tries API first, falls back on error
+  private useApi = true; // Set to true to try backend, false to force local
 
   constructor() {
     this.localDb.init();
   }
 
-  // Helper to fetch or fallback
-  private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  // Helper to fetch or fallback with timeout
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     if (!this.useApi) throw new Error("API disabled");
+    
+    // Create a timeout to avoid hanging if the backend is down
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 1000); // 1 second timeout for responsiveness
+
     try {
-      const res = await fetch(`${this.apiBase}${endpoint}`, options);
+      const res = await fetch(`${this.apiBase}${endpoint}`, { 
+        ...options, 
+        signal: controller.signal 
+      });
+      clearTimeout(id);
+      
       if (!res.ok) throw new Error("API Error");
       return await res.json();
     } catch (e) {
-      console.warn(`API unavailable (${endpoint}). Using local storage.`);
-      throw e; // Throw to trigger fallback in specific methods if needed, or handle there
+      clearTimeout(id);
+      // console.warn(`API unavailable (${endpoint}). Using local storage.`);
+      throw e; 
     }
   }
 
@@ -307,7 +318,6 @@ class DatabaseService {
 
   async toggleRegister(amount: number): Promise<CashRegister> {
      try {
-       // Logic bit ambiguous in async bridge without complex state tracking, simple toggle
        const current = await this.getCashRegister();
        const isOpen = !current?.isOpen;
        await this.request('/cash-register/toggle', {
@@ -315,7 +325,10 @@ class DatabaseService {
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ amount, isOpen })
        });
-       return (await this.getCashRegister()) as CashRegister;
+       // Re-fetch to be sure
+       const updated = await this.getCashRegister();
+       if (!updated) throw new Error("Failed to fetch updated register");
+       return updated;
      } catch {
        return this.localDb.toggleRegister(amount);
      }
