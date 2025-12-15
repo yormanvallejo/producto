@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, AlertCircle, Edit2, TrendingUp } from 'lucide-react';
-import { Product, Category } from '../types';
+import { Plus, Search, AlertCircle, Edit2, TrendingUp, Package } from 'lucide-react';
+import { Product, Category, ProductType } from '../types';
 import { db } from '../services/db';
 
 export const Inventory = () => {
@@ -9,6 +9,7 @@ export const Inventory = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [currentProduct, setCurrentProduct] = useState<Partial<Product>>({});
+  const [activeTab, setActiveTab] = useState<'ALL' | 'PRODUCTS' | 'INGREDIENTS'>('ALL');
 
   useEffect(() => {
     loadData();
@@ -20,18 +21,20 @@ export const Inventory = () => {
   };
 
   const handleSave = async () => {
-    if (!currentProduct.name || !currentProduct.price) return;
+    if (!currentProduct.name) return;
     
     await db.saveProduct({
       id: currentProduct.id || '',
       name: currentProduct.name,
       category: currentProduct.category || 'General',
-      price: Number(currentProduct.price),
+      price: Number(currentProduct.price || 0),
       cost: Number(currentProduct.cost || 0),
       stock: Number(currentProduct.stock || 0),
       unit: currentProduct.unit || 'unidad',
       sku: currentProduct.sku || `SKU-${Math.floor(Math.random()*1000)}`,
-      image: 'https://picsum.photos/200/200'
+      type: currentProduct.type || ProductType.FINAL_PRODUCT,
+      image: 'https://picsum.photos/200/200',
+      recipe: [] // In a full implementation, we would edit recipes here
     });
     
     await loadData();
@@ -39,22 +42,35 @@ export const Inventory = () => {
     setCurrentProduct({});
   };
 
-  const filtered = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filtered = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+    if (activeTab === 'ALL') return matchesSearch;
+    if (activeTab === 'PRODUCTS') return matchesSearch && p.type === ProductType.FINAL_PRODUCT;
+    if (activeTab === 'INGREDIENTS') return matchesSearch && p.type === ProductType.INGREDIENT;
+    return matchesSearch;
+  });
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Gestión de Inventario</h1>
-          <p className="text-gray-500">Control de stock, costos y precios.</p>
+          <p className="text-gray-500">Control de stock, fichas técnicas y costos.</p>
         </div>
         <button 
-          onClick={() => { setCurrentProduct({}); setIsEditing(true); }}
+          onClick={() => { setCurrentProduct({ type: ProductType.FINAL_PRODUCT }); setIsEditing(true); }}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-700 transition-colors"
         >
           <Plus size={18} className="mr-2" />
-          Nuevo Producto
+          Nuevo Item
         </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex space-x-2 mb-4">
+         <button onClick={() => setActiveTab('ALL')} className={`px-4 py-2 rounded-full text-sm font-medium ${activeTab === 'ALL' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border'}`}>Todo</button>
+         <button onClick={() => setActiveTab('PRODUCTS')} className={`px-4 py-2 rounded-full text-sm font-medium ${activeTab === 'PRODUCTS' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border'}`}>Platos / Ventas</button>
+         <button onClick={() => setActiveTab('INGREDIENTS')} className={`px-4 py-2 rounded-full text-sm font-medium ${activeTab === 'INGREDIENTS' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 border'}`}>Insumos / Ingredientes</button>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -73,11 +89,11 @@ export const Inventory = () => {
             <thead>
               <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
                 <th className="p-4 font-medium">Producto</th>
-                <th className="p-4 font-medium">Categoría</th>
-                <th className="p-4 font-medium text-right">Costo</th>
-                <th className="p-4 font-medium text-right">Precio</th>
+                <th className="p-4 font-medium">Tipo</th>
+                <th className="p-4 font-medium text-right">Costo Prom.</th>
+                <th className="p-4 font-medium text-right">Precio Venta</th>
                 <th className="p-4 font-medium text-right">Margen</th>
-                <th className="p-4 font-medium text-center">Stock</th>
+                <th className="p-4 font-medium text-center">Stock Físico</th>
                 <th className="p-4 font-medium text-center">Acciones</th>
               </tr>
             </thead>
@@ -85,6 +101,7 @@ export const Inventory = () => {
               {filtered.map(product => {
                 const margin = product.price - product.cost;
                 const marginPercent = product.price > 0 ? (margin / product.price) * 100 : 0;
+                const isIngredient = product.type === ProductType.INGREDIENT;
                 
                 return (
                   <tr key={product.id} className="hover:bg-gray-50 transition-colors">
@@ -92,17 +109,25 @@ export const Inventory = () => {
                       <div className="font-medium text-gray-900">{product.name}</div>
                       <div className="text-xs text-gray-400">{product.sku}</div>
                     </td>
-                    <td className="p-4 text-sm text-gray-600">{product.category}</td>
-                    <td className="p-4 text-right text-sm text-gray-600">${product.cost.toFixed(2)}</td>
-                    <td className="p-4 text-right text-sm font-medium text-gray-900">${product.price.toFixed(2)}</td>
-                    <td className="p-4 text-right text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${marginPercent > 30 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {marginPercent.toFixed(0)}%
+                    <td className="p-4">
+                      <span className={`text-xs px-2 py-1 rounded-full border ${isIngredient ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                         {product.type}
                       </span>
+                    </td>
+                    <td className="p-4 text-right text-sm text-gray-600">${product.cost.toFixed(2)}</td>
+                    <td className="p-4 text-right text-sm font-medium text-gray-900">
+                       {isIngredient ? '-' : `$${product.price.toFixed(2)}`}
+                    </td>
+                    <td className="p-4 text-right text-sm">
+                      {!isIngredient && (
+                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${marginPercent > 30 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          {marginPercent.toFixed(0)}%
+                        </span>
+                      )}
                     </td>
                     <td className="p-4 text-center">
                       <div className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${product.stock < 10 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-700'}`}>
-                        {product.stock} {product.unit}
+                        {product.stock.toFixed(2)} {product.unit}
                         {product.stock < 10 && <AlertCircle size={12} className="ml-1" />}
                       </div>
                     </td>
@@ -125,12 +150,23 @@ export const Inventory = () => {
       {/* Edit Modal */}
       {isEditing && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-             <h2 className="text-xl font-bold mb-4">{currentProduct.id ? 'Editar Producto' : 'Nuevo Producto'}</h2>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+             <h2 className="text-xl font-bold mb-4">{currentProduct.id ? 'Editar Item' : 'Nuevo Item'}</h2>
              <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
                   <input className="w-full border p-2 rounded" value={currentProduct.name || ''} onChange={e => setCurrentProduct({...currentProduct, name: e.target.value})} />
+                </div>
+                <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Item</label>
+                   <select 
+                    className="w-full border p-2 rounded bg-gray-50"
+                    value={currentProduct.type || ProductType.FINAL_PRODUCT}
+                    onChange={e => setCurrentProduct({...currentProduct, type: e.target.value as ProductType})}
+                   >
+                     <option value={ProductType.FINAL_PRODUCT}>Producto Final (Venta)</option>
+                     <option value={ProductType.INGREDIENT}>Insumo (Materia Prima)</option>
+                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
@@ -148,27 +184,43 @@ export const Inventory = () => {
                   <input className="w-full border p-2 rounded" value={currentProduct.sku || ''} onChange={e => setCurrentProduct({...currentProduct, sku: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Costo ($)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Costo Unitario ($)</label>
                   <input type="number" className="w-full border p-2 rounded" value={currentProduct.cost || ''} onChange={e => setCurrentProduct({...currentProduct, cost: Number(e.target.value)})} />
+                  <p className="text-[10px] text-gray-400 mt-1">Se actualiza con las compras.</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio ($)</label>
-                  <input type="number" className="w-full border p-2 rounded" value={currentProduct.price || ''} onChange={e => setCurrentProduct({...currentProduct, price: Number(e.target.value)})} />
-                </div>
+                {currentProduct.type === ProductType.FINAL_PRODUCT && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Precio Venta ($)</label>
+                    <input type="number" className="w-full border p-2 rounded" value={currentProduct.price || ''} onChange={e => setCurrentProduct({...currentProduct, price: Number(e.target.value)})} />
+                  </div>
+                )}
                  <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Stock Actual</label>
                   <input type="number" className="w-full border p-2 rounded" value={currentProduct.stock || ''} onChange={e => setCurrentProduct({...currentProduct, stock: Number(e.target.value)})} />
                 </div>
                  <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unidad de Medida</label>
                   <select className="w-full border p-2 rounded" value={currentProduct.unit || 'unidad'} onChange={e => setCurrentProduct({...currentProduct, unit: e.target.value})}>
                     <option value="unidad">Unidad</option>
                     <option value="kg">Kg</option>
                     <option value="litro">Litro</option>
                     <option value="porcion">Porción</option>
+                    <option value="gr">Gramos</option>
+                    <option value="ml">Mililitros</option>
                   </select>
                 </div>
              </div>
+             
+             {/* Simple Recipe Notice */}
+             {currentProduct.type === ProductType.FINAL_PRODUCT && (
+               <div className="mt-4 p-3 bg-blue-50 text-blue-800 text-sm rounded border border-blue-100 flex items-start">
+                  <Package className="mr-2 mt-0.5" size={16}/>
+                  <div>
+                    <strong>Ficha Técnica:</strong> Para gestión avanzada de recetas (descontar carne al vender hamburguesa), configura los ingredientes en la versión completa.
+                  </div>
+               </div>
+             )}
+
              <div className="mt-6 flex justify-end space-x-3">
                <button onClick={() => setIsEditing(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
                <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Guardar</button>

@@ -12,22 +12,34 @@ export enum Role {
   CASHIER = 'Cajero'
 }
 
+export enum ProductType {
+  FINAL_PRODUCT = 'Producto Final', // Se vende (Hamburguesa)
+  INGREDIENT = 'Insumo' // Materia prima (Carne, Pan)
+}
+
 export interface Category {
   id: string;
   name: string;
   description?: string;
 }
 
+export interface RecipeItem {
+  ingredientId: string;
+  quantity: number; // Cantidad a descontar del insumo
+}
+
 export interface Product {
   id: string;
   name: string;
   category: string;
-  price: number;
-  cost: number;
+  price: number; // Precio de venta (0 si es insumo interno)
+  cost: number; // Costo unitario
   stock: number;
   unit: string; // e.g., 'unidad', 'kg', 'litro'
   image?: string;
   sku: string;
+  type: ProductType;
+  recipe?: RecipeItem[]; // Si es producto final, qué insumos gasta
 }
 
 export interface CartItem extends Product {
@@ -68,6 +80,9 @@ export interface Employee {
   name: string;
   role: Role;
   phone: string;
+  email: string;
+  active: boolean;
+  salary?: number;
 }
 
 export interface PurchaseItem {
