@@ -1,14 +1,12 @@
 import { Product, Order, Client, Supplier, Employee, Transaction, CashRegister, PaymentMethod, Category, Purchase, Role, ProductType } from '../types';
 
 class DatabaseService {
-  // CONFIGURA AQUI TU URL LOCAL (Si usas XAMPP suele ser localhost/tu-carpeta)
-  private apiBase = 'http://localhost/treinta-pos/api/api.php?path=';
+  // Conexión al Backend Node.js
+  private apiBase = 'http://localhost:3000/api/';
   
-  // Helper para hacer peticiones
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     try {
-      const separator = path.includes('?') ? '&' : '';
-      const response = await fetch(`${this.apiBase}${path}`, options);
+      const response = await fetch(`${this.apiBase}${endpoint}`, options);
       
       if (!response.ok) {
         throw new Error(`Error HTTP: ${response.status}`);
@@ -16,7 +14,6 @@ class DatabaseService {
       return await response.json();
     } catch (error) {
       console.error("Error API:", error);
-      // Retornar array vacío o null para evitar romper la UI si falla el backend
       return [] as any; 
     }
   }
@@ -35,7 +32,7 @@ class DatabaseService {
   }
 
   async deleteCategory(id: string): Promise<void> {
-    await this.request(`categories&id=${id}`, { method: 'DELETE' });
+    await this.request(`categories/${id}`, { method: 'DELETE' });
   }
 
   // --- Products ---
@@ -63,7 +60,6 @@ class DatabaseService {
        body: JSON.stringify({ items, paymentMethod, total, clientId })
      });
      
-     // Retornar objeto optimista para la UI
      return {
        id: res.orderId,
        date: new Date().toISOString(),
@@ -111,7 +107,7 @@ class DatabaseService {
   }
 
    async deleteEmployee(id: string): Promise<void> {
-    await this.request(`employees&id=${id}`, { method: 'DELETE' });
+    await this.request(`employees/${id}`, { method: 'DELETE' });
   }
 
   // --- Finance ---
@@ -127,7 +123,7 @@ class DatabaseService {
      const current = await this.getCashRegister();
      const isOpen = !current?.isOpen;
      
-     await this.request('cash-register-toggle', {
+     await this.request('cash-register/toggle', {
        method: 'POST',
        headers: { 'Content-Type': 'application/json' },
        body: JSON.stringify({ amount, isOpen })

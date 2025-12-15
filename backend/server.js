@@ -33,7 +33,9 @@ app.post('/api/categories', async (req, res) => {
   const { id, name, description } = req.body;
   const newId = id || uuidv4();
   try {
-    await pool.query('INSERT INTO categories (id, name, description) VALUES (?, ?, ?)', [newId, name, description]);
+    // Usamos ON DUPLICATE KEY UPDATE para permitir editar categorías existentes
+    const sql = 'INSERT INTO categories (id, name, description) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE name=?, description=?';
+    await pool.query(sql, [newId, name, description, name, description]);
     res.json({ id: newId, name, description });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -49,7 +51,6 @@ app.delete('/api/categories/:id', async (req, res) => {
 app.get('/api/products', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM products');
-    // Convert numeric strings back to numbers if necessary
     const products = rows.map(p => ({...p, price: Number(p.price), cost: Number(p.cost), stock: Number(p.stock)}));
     res.json(products);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -70,8 +71,6 @@ app.post('/api/products', async (req, res) => {
 app.get('/api/orders', async (req, res) => {
   try {
     const [orders] = await pool.query('SELECT * FROM orders ORDER BY date DESC');
-    // Fetch items implies N+1, for simplicity in this example we might fetch separately or just fetch basic info
-    // A production app would use JOINs.
     res.json(orders.map(o => ({...o, total: Number(o.total)})));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -169,49 +168,81 @@ app.post('/api/purchases', async (req, res) => {
     }
 });
 
+// --- Employees ---
+app.get('/api/employees', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM employees');
+    res.json(rows.map(e => ({...e, active: !!e.active})));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/employees', async (req, res) => {
+  const { id, name, role, phone, email, active, salary } = req.body;
+  const newId = id || uuidv4();
+  try {
+    const sql = 'INSERT INTO employees (id, name, role, phone, email, active, salary) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=?, role=?, phone=?, email=?, salary=?, active=?';
+    await pool.query(sql, [newId, name, role, phone, email, active ? 1 : 0, salary, name, role, phone, email, salary, active ? 1 : 0]);
+    res.json({ id: newId });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/employees/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM employees WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // --- Others (Clients, Suppliers, Transactions, CashRegister) ---
-// Simplified endpoints for brevity
 app.get('/api/clients', async (req, res) => {
-    const [rows] = await pool.query('SELECT * FROM clients');
-    res.json(rows.map(r => ({...r, totalSpent: Number(r.total_spent)})));
+    try {
+      const [rows] = await pool.query('SELECT * FROM clients');
+      res.json(rows.map(r => ({...r, totalSpent: Number(r.total_spent)})));
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/suppliers', async (req, res) => {
-    const [rows] = await pool.query('SELECT * FROM suppliers');
-    res.json(rows);
+    try {
+      const [rows] = await pool.query('SELECT * FROM suppliers');
+      res.json(rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/transactions', async (req, res) => {
-    const [rows] = await pool.query('SELECT * FROM transactions');
-    res.json(rows.map(r => ({...r, amount: Number(r.amount)})));
+    try {
+      const [rows] = await pool.query('SELECT * FROM transactions');
+      res.json(rows.map(r => ({...r, amount: Number(r.amount)})));
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/cash-register', async (req, res) => {
-    const [rows] = await pool.query('SELECT * FROM cash_register ORDER BY id DESC LIMIT 1');
-    if (rows.length > 0) {
-        const r = rows[0];
-        res.json({
-            isOpen: !!r.is_open,
-            openedAt: r.opened_at,
-            initialAmount: Number(r.initial_amount),
-            currentAmount: Number(r.current_amount),
-            expectedAmount: Number(r.expected_amount)
-        });
-    } else {
-        res.json(null);
-    }
+    try {
+      const [rows] = await pool.query('SELECT * FROM cash_register ORDER BY id DESC LIMIT 1');
+      if (rows.length > 0) {
+          const r = rows[0];
+          res.json({
+              isOpen: !!r.is_open,
+              openedAt: r.opened_at,
+              initialAmount: Number(r.initial_amount),
+              currentAmount: Number(r.current_amount),
+              expectedAmount: Number(r.expected_amount)
+          });
+      } else {
+          res.json(null);
+      }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/cash-register/toggle', async (req, res) => {
     const { amount, isOpen } = req.body;
-    // Logic to insert new row for Open or update existing for Close would go here
-    // For simplicity, just insert new open
-    if (isOpen) {
-        await pool.query('INSERT INTO cash_register (is_open, opened_at, initial_amount, current_amount, expected_amount) VALUES (1, NOW(), ?, ?, ?)', [amount, amount, amount]);
-    } else {
-        await pool.query('UPDATE cash_register SET is_open = 0 WHERE is_open = 1');
-    }
-    res.json({ success: true });
+    try {
+      if (isOpen) {
+          await pool.query('INSERT INTO cash_register (is_open, opened_at, initial_amount, current_amount, expected_amount) VALUES (1, NOW(), ?, ?, ?)', [amount, amount, amount]);
+      } else {
+          await pool.query('UPDATE cash_register SET is_open = 0 WHERE is_open = 1');
+      }
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.listen(PORT, () => {
